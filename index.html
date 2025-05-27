@@ -31,7 +31,7 @@
 
     function parseText(text) {
       const lines = text.split("\n").map(line => line.trim()).filter(Boolean);
-      const scorePattern = /^\d+\.?\s*(.+?)\s+(\d{1,2})$/;
+      const scorePattern = /^\d+(?:st|nd|rd|th)?\s+(.+?)\s+(\d{1,3})$/;
       for (const line of lines) {
         const match = line.match(scorePattern);
         if (match) {
