@@ -1,78 +1,64 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MK8DX スコア集計</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>マリオカートチームスコア集計</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/tesseract.min.js"></script>
   <style>
-    body { font-family: sans-serif; padding: 1em; background: #f8f8f8; }
-    h1 { font-size: 1.5em; margin-bottom: 1em; }
-    input[type="file"] { margin-bottom: 1em; }
-    .team-list { background: white; padding: 1em; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .team { margin: 0.5em 0; padding: 0.5em; border-radius: 4px; }
-    .highlight { background: #e0f0ff; }
+    body { font-family: sans-serif; padding: 1rem; background: #f4f4f4; }
+    h1 { font-size: 1.5rem; }
+    #results { margin-top: 1rem; background: white; padding: 1rem; border-radius: 8px; }
+    .highlight { background-color: #ffeaa7; }
+    .team-score { font-weight: bold; }
   </style>
 </head>
 <body>
-  <h1>スコア集計</h1>
-  <input type="file" accept="image/*" id="imageInput">
-  <div class="team-list" id="output"></div>
+  <h1>マリオカート チームスコア自動集計</h1>
+  <input type="file" id="imageInput" accept="image/*" />
+  <div id="results"></div>
 
   <script>
-    async function recognizeTextFromImage(file) {
-      const worker = await Tesseract.createWorker('jpn+eng');
-      const { data: { text } } = await worker.recognize(file);
-      await worker.terminate();
-      return text;
-    }
+    const imageInput = document.getElementById("imageInput");
+    const resultsDiv = document.getElementById("results");
 
-    function parseText(text) {
-      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length);
-      const players = [];
+    function parseOCRText(text) {
+      const lines = text.split("\n").map(line => line.trim()).filter(line => line);
+      const playerLines = lines.filter(line => /\d+/.test(line));
+      const scores = {};
 
-      for (let line of lines) {
-        const match = line.match(/^(\d+)\.?\s*([A-Za-z0-9\u3040-\u30ff\u4e00-\u9faf☆★]+)\s+(\d{1,3})$/);
+      playerLines.forEach(line => {
+        const match = line.match(/(.+?)\s+(\d{1,2})$/);
         if (match) {
-          const [, pos, name, score] = match;
-          players.push({ name, score: parseInt(score, 10), tag: name[0].toUpperCase() });
+          let name = match[1].replace(/[★☆\*\s]+/g, "").toUpperCase();
+          const point = parseInt(match[2], 10);
+          const tag = name.charAt(0);
+          if (!scores[tag]) scores[tag] = 0;
+          scores[tag] += point;
         }
-      }
-
-      return players;
-    }
-
-    function aggregateScores(players) {
-      const teamScores = {};
-      players.forEach(({ tag, score }) => {
-        if (!teamScores[tag]) teamScores[tag] = 0;
-        teamScores[tag] += score;
       });
-      return Object.entries(teamScores)
-        .map(([tag, score]) => ({ tag, score }))
-        .sort((a, b) => b.score - a.score);
+
+      return scores;
     }
 
-    document.getElementById('imageInput').addEventListener('change', async (e) => {
-      const file = e.target.files[0];
+    function displayScores(scores) {
+      const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+      resultsDiv.innerHTML = '<h2>チームスコアランキング</h2><ol>' +
+        sorted.map(([tag, score]) => `<li class="team-score">${tag} チーム: ${score} 点</li>`).join('') +
+        '</ol>';
+    }
+
+    imageInput.addEventListener("change", () => {
+      const file = imageInput.files[0];
       if (!file) return;
 
-      document.getElementById('output').innerHTML = '読み込み中...';
-      const text = await recognizeTextFromImage(file);
-      const players = parseText(text);
-      const teams = aggregateScores(players);
-
-      const output = document.getElementById('output');
-      output.innerHTML = '';
-
-      teams.forEach((team, i) => {
-        const div = document.createElement('div');
-        div.className = 'team' + (i === 0 ? ' highlight' : '');
-        div.textContent = `${i + 1}位: チーム${team.tag} - 合計 ${team.score}点`;
-        output.appendChild(div);
+      Tesseract.recognize(file, 'jpn+eng', {
+        logger: m => console.log(m)
+      }).then(({ data: { text } }) => {
+        const scores = parseOCRText(text);
+        displayScores(scores);
       });
     });
   </script>
-
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.0/dist/tesseract.min.js"></script>
 </body>
 </html>
