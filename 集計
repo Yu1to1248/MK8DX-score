@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>マリオカート スコア集計</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 1rem;
+      background: #f9f9f9;
+      color: #333;
+    }
+    h1 {
+      font-size: 1.5rem;
+    }
+    input, select, button {
+      font-size: 1rem;
+      margin: 0.5rem 0;
+    }
+    .highlight {
+      background-color: #fffae6;
+    }
+    .team-score {
+      margin-top: 1rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 0.5rem;
+      text-align: center;
+    }
+    .team-header {
+      font-weight: bold;
+      background-color: #e9e9e9;
+    }
+  </style>
+</head>
+<body>
+  <h1>マリオカート スコア集計 (iPad対応)</h1>
+  <label for="gameMode">モード選択：</label>
+  <select id="gameMode">
+    <option value="ffa">FFA（個人戦）</option>
+    <option value="team2">2人チーム（6チーム）</option>
+    <option value="team3">3人チーム（4チーム）</option>
+    <option value="team4">4人チーム（3チーム）</option>
+  </select>
+
+  <input type="file" id="imageUpload" accept="image/*" />
+  <button onclick="processImage()">画像から読み取る</button>
+
+  <div id="scoreOutput" class="team-score"></div>
+
+  <script>
+    let teamScores = {}; // チームごとの合計
+    let raceCount = 0;
+    let myTeamPrefix = "";
+
+    async function processImage() {
+      const file = document.getElementById('imageUpload').files[0];
+      if (!file) return;
+
+      const imageBitmap = await createImageBitmap(file);
+      const canvas = document.createElement("canvas");
+      canvas.width = imageBitmap.width;
+      canvas.height = imageBitmap.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(imageBitmap, 0, 0);
+
+      const text = await Tesseract.recognize(canvas, 'jpn+eng', {
+        logger: m => console.log(m)
+      }).then(({ data: { text } }) => text);
+
+      parseScoreText(text);
+    }
+
+    function parseScoreText(text) {
+      const lines = text.split("\n").filter(line => line.match(/\d+$/));
+      const scores = {};
+
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        const name = parts.slice(1, -1).join('');
+        const tag = name[0].toUpperCase();
+        const score = parseInt(parts[parts.length - 1], 10);
+
+        if (!teamScores[tag]) teamScores[tag] = 0;
+        teamScores[tag] += score;
+      }
+
+      raceCount++;
+      renderScores();
+    }
+
+    function renderScores() {
+      const sortedTeams = Object.entries(teamScores).sort((a, b) => b[1] - a[1]);
+      const output = [`<h2>チームスコア（${raceCount} レース）</h2>`];
+      output.push(`<table><tr><th>順位</th><th>チーム</th><th>合計点</th></tr>`);
+
+      sortedTeams.forEach(([tag, score], i) => {
+        const highlight = tag === myTeamPrefix ? ' class="highlight"' : '';
+        output.push(`<tr${highlight}><td>${i + 1}</td><td>${tag}</td><td>${score}</td></tr>`);
+      });
+
+      output.push(`</table>`);
+      document.getElementById("scoreOutput").innerHTML = output.join("\n");
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+</body>
+</html>
+
