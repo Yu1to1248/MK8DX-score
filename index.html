@@ -3,61 +3,71 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>マリオカートチームスコア集計</title>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/tesseract.min.js"></script>
+  <title>マリオカート スコア集計</title>
   <style>
-    body { font-family: sans-serif; padding: 1rem; background: #f4f4f4; }
-    h1 { font-size: 1.5rem; }
-    #results { margin-top: 1rem; background: white; padding: 1rem; border-radius: 8px; }
-    .highlight { background-color: #ffeaa7; }
-    .team-score { font-weight: bold; }
+    body { font-family: sans-serif; text-align: center; background: #000; color: #fff; }
+    h1 { margin-top: 20px; }
+    table { width: 80%; margin: 20px auto; border-collapse: collapse; background: #007bff; }
+    th, td { border: 1px solid white; padding: 10px; font-size: 1.5rem; }
+    th { background: #0056b3; }
+    .highlight { background: #004080; }
   </style>
 </head>
 <body>
-  <h1>マリオカート チームスコア自動集計</h1>
-  <input type="file" id="imageInput" accept="image/*" />
-  <div id="results"></div>
+  <h1>スコア集計</h1>
+  <input type="file" accept="image/*" id="imageInput">
+  <div id="output"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.0/dist/tesseract.min.js"></script>
   <script>
-    const imageInput = document.getElementById("imageInput");
-    const resultsDiv = document.getElementById("results");
+    const input = document.getElementById('imageInput');
+    const output = document.getElementById('output');
+    let scores = {};
 
-    function parseOCRText(text) {
-      const lines = text.split("\n").map(line => line.trim()).filter(line => line);
-      const playerLines = lines.filter(line => /\d+/.test(line));
-      const scores = {};
+    function extractTag(name) {
+      const match = name.trim().match(/^([A-Z]+)/i);
+      return match ? match[1].toUpperCase() : '?';
+    }
 
-      playerLines.forEach(line => {
-        const match = line.match(/(.+?)\s+(\d{1,2})$/);
+    function parseText(text) {
+      const lines = text.split("\n").map(line => line.trim()).filter(Boolean);
+      const scorePattern = /^\d+\.?\s*(.+?)\s+(\d{1,2})$/;
+      for (const line of lines) {
+        const match = line.match(scorePattern);
         if (match) {
-          let name = match[1].replace(/[★☆\*\s]+/g, "").toUpperCase();
-          const point = parseInt(match[2], 10);
-          const tag = name.charAt(0);
-          if (!scores[tag]) scores[tag] = 0;
-          scores[tag] += point;
+          const name = match[1];
+          const point = parseInt(match[2]);
+          const tag = extractTag(name);
+          scores[tag] = (scores[tag] || 0) + point;
         }
-      });
-
-      return scores;
+      }
+      displayScores();
     }
 
-    function displayScores(scores) {
+    function displayScores() {
       const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
-      resultsDiv.innerHTML = '<h2>チームスコアランキング</h2><ol>' +
-        sorted.map(([tag, score]) => `<li class="team-score">${tag} チーム: ${score} 点</li>`).join('') +
-        '</ol>';
+      const total = sorted.reduce((sum, [_, score]) => sum + score, 0);
+
+      let html = '<table><tr><th></th><th>Tag</th><th>Score</th></tr>';
+      sorted.forEach(([tag, score], i) => {
+        const rank = `${i + 1}${['st', 'nd', 'rd'][i] || 'th'}`;
+        html += `<tr${i === 0 ? ' class="highlight"' : ''}><td>${rank}</td><td>${tag}</td><td>${score}</td></tr>`;
+      });
+      html += `<tr><td colspan="2"></td><td>${total}</td></tr></table>`;
+      output.innerHTML = html;
     }
 
-    imageInput.addEventListener("change", () => {
-      const file = imageInput.files[0];
+    input.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
       if (!file) return;
 
-      Tesseract.recognize(file, 'jpn+eng', {
-        logger: m => console.log(m)
-      }).then(({ data: { text } }) => {
-        const scores = parseOCRText(text);
-        displayScores(scores);
-      });
+      const { data: { text } } = await Tesseract.recognize(
+        file,
+        'jpn+eng',
+        { logger: m => console.log(m) }
+      );
+      scores = {}; // reset
+      parseText(text);
     });
   </script>
 </body>
