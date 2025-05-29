@@ -3,72 +3,98 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>マリオカート スコア集計</title>
+  <title>スコア集計（ゲーム用OCR強化版）</title>
   <style>
     body { font-family: sans-serif; text-align: center; background: #000; color: #fff; }
-    h1 { margin-top: 20px; }
+    h1 { margin: 20px; }
     table { width: 90%; margin: 20px auto; border-collapse: collapse; background: #007bff; }
-    th, td { border: 1px solid white; padding: 10px; font-size: 1.5rem; }
+    th, td { border: 1px solid white; padding: 10px; font-size: 1.2rem; }
     th { background: #0056b3; }
     .highlight { background: #004080; }
+    canvas { display: none; }
   </style>
 </head>
 <body>
   <h1>スコア集計</h1>
   <input type="file" accept="image/*" id="imageInput">
   <div id="output"></div>
+  <canvas id="canvas"></canvas>
 
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.0/dist/tesseract.min.js"></script>
   <script>
     const input = document.getElementById('imageInput');
     const output = document.getElementById('output');
-    let scores = {};
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    input.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+      img.onload = async () => {
+        // Step 1: 拡大してcanvasに描画
+        const scale = 2; // 倍率
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        // Step 2: グレースケール + 2値化
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const avg = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+          const bin = avg > 180 ? 255 : 0; // しきい値
+          data[i] = data[i+1] = data[i+2] = bin;
+        }
+        ctx.putImageData(imageData, 0, 0);
+
+        // Step 3: OCR実行
+        const { data: { text } } = await Tesseract.recognize(canvas, 'jpn+eng', {
+          logger: m => console.log(m),
+          tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789☆★',
+          preserve_interword_spaces: 1
+        });
+
+        // Step 4: テキスト処理とスコア集計
+        const scores = {};
+        const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+        const linePattern = /^\s*(\d{1,2})\s+(.+?)\s+(\d{1,2})$/;
+
+        for (const line of lines) {
+          const match = line.match(linePattern);
+          if (match) {
+            const place = parseInt(match[1]);
+            const name = match[2];
+            const score = parseInt(match[3]);
+            const tag = extractTag(name);
+            scores[tag] = (scores[tag] || 0) + score;
+          }
+        }
+
+        // Step 5: 表示
+        displayScores(scores);
+      };
+    });
 
     function extractTag(name) {
-      const match = name.trim().match(/^([A-Za-z]+)/);
-      return match ? match[1].toUpperCase() : '?';
+      const match = name.trim().match(/^([A-Zあ-んア-ン☆★]+)/i);
+      return match ? match[1] : '?';
     }
 
-    function parseText(text) {
-      scores = {}; // reset
-      const lines = text.split("\n").map(line => line.trim()).filter(Boolean);
-      const scorePattern = /^(\d+(?:st|nd|rd|th))\s+([A-Za-z0-9]+)\s+(\d{1,4})$/;
-
-      for (const line of lines) {
-        const match = line.match(scorePattern);
-        if (match) {
-          const name = match[2];
-          const point = parseInt(match[3]);
-          const tag = extractTag(name);
-          scores[tag] = (scores[tag] || 0) + point;
-        }
-      }
-
-      displayScores();
-    }
-
-    function displayScores() {
+    function displayScores(scores) {
       const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
       const total = sorted.reduce((sum, [_, score]) => sum + score, 0);
 
       let html = '<table><tr><th></th><th>Tag</th><th>Score</th></tr>';
       sorted.forEach(([tag, score], i) => {
-        const rankSuffix = ['st','nd','rd'][i] || 'th';
-        const rank = `${i + 1}${rankSuffix}`;
-        html += `<tr><td>${rank}</td><td>${tag}</td><td>${score}</td></tr>`;
+        const rank = `${i + 1}`;
+        html += `<tr${i === 0 ? ' class="highlight"' : ''}><td>${rank}</td><td>${tag}</td><td>${score}</td></tr>`;
       });
-      html += `<tr><td colspan="2"></td><td>${total}</td></tr></table>`;
+      html += `<tr><td colspan="2">Total</td><td>${total}</td></tr></table>`;
       output.innerHTML = html;
     }
-
-    input.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const { data: { text } } = await Tesseract.recognize(file, 'eng+jpn', {
-        logger: m => console.log(m)
-      });
-      parseText(text);
-    });
   </script>
 </body>
 </html>
